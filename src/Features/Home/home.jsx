@@ -1,82 +1,53 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import { useQueryClient, useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { increment } from '../../../redux/slices/exampleSlice';
 
 const Home = () => {
     const dispatch = useDispatch();
     const count = useSelector((state) => state.example.value);
-    const queryClient = useQueryClient();
-    const [userId, setUserId] = useState(1);
 
-    // Mock API functions
-    const fetchUserData = async (id) => {
-        await new Promise(resolve => setTimeout(resolve, 1200));
-        // Simulate API response
-        return {
-            id,
-            name: `User ${id}`,
-            email: `user${id}@example.com`,
-            lastLogin: new Date().toISOString(),
-            posts: Math.floor(Math.random() * 50) + 1,
-            followers: Math.floor(Math.random() * 1000) + 10
-        };
-    };
-
-    const fetchPosts = async () => {
-        await new Promise(resolve => setTimeout(resolve, 800));
-        const posts = [];
-        for (let i = 1; i <= 5; i++) {
-            posts.push({
-                id: i,
-                title: `Demo Post ${i}`,
-                content: `This is the content for post ${i}. It demonstrates TanStack Query caching.`,
-                likes: Math.floor(Math.random() * 100),
-                timestamp: new Date(Date.now() - i * 24 * 60 * 60 * 1000).toISOString()
-            });
+    // Real API function
+    const fetchExampleData = async () => {
+        console.log("🚀 Making API call to HTTPBin at:", new Date().toLocaleString());
+        const response = await fetch('https://httpbin.org/json');
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
         }
-        return posts;
-    };
-
-    const createPost = async (newPost) => {
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        const data = await response.json();
+        console.log("✅ API call completed successfully");
         return {
-            id: Date.now(),
-            ...newPost,
-            likes: 0,
+            status: response.status,
+            statusText: response.statusText,
+            url: response.url,
+            headers: Object.fromEntries(response.headers.entries()),
+            data: data,
             timestamp: new Date().toISOString()
         };
     };
 
-    // TanStack Query hooks
-    const { data: userData, isLoading: userLoading, error: userError, refetch: refetchUser } = useQuery({
-        queryKey: ['user', userId],
-        queryFn: () => fetchUserData(userId),
-        staleTime: 1000 * 60 * 5, // 5 minutes
-        gcTime: 1000 * 60 * 10, // 10 minutes (formerly cacheTime)
+    // TanStack Query hook
+    const { data: exampleData, isLoading: exampleLoading, error: exampleError, refetch: refetchExample, dataUpdatedAt, isStale, isFetching } = useQuery({
+        queryKey: ['httpbin-json'],
+        queryFn: fetchExampleData,
+        staleTime: 1000 * 60 * 5, // 5 minutes - data is fresh for 5 minutes
+        gcTime: 1000 * 60 * 10, // 10 minutes - data stays in cache for 10 minutes
+        retry: 2,
+        refetchOnWindowFocus: false, // Don't refetch when window gains focus
+        refetchOnMount: true, // Always fetch on component mount if data is stale
     });
 
-    const { data: postsData, isLoading: postsLoading, error: postsError } = useQuery({
-        queryKey: ['posts'],
-        queryFn: fetchPosts,
-        staleTime: 1000 * 60 * 2, // 2 minutes
-        refetchOnWindowFocus: false,
-    });
-
-    const createPostMutation = useMutation({
-        mutationFn: createPost,
-        onSuccess: () => {
-            // Invalidate and refetch posts
-            queryClient.invalidateQueries({ queryKey: ['posts'] });
-        },
-    });
-
-    const handleCreatePost = () => {
-        createPostMutation.mutate({
-            title: `New Post ${Date.now()}`,
-            content: 'This post was created using TanStack Query mutation!'
+    // Debug logging
+    React.useEffect(() => {
+        console.log("📊 TanStack Query Status:", {
+            hasData: !!exampleData,
+            isLoading: exampleLoading,
+            isFetching,
+            isStale,
+            dataUpdatedAt: dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleString() : 'No data',
+            cacheAge: dataUpdatedAt ? `${Math.round((Date.now() - dataUpdatedAt) / 1000)}s ago` : 'N/A'
         });
-    };
+    }, [exampleData, exampleLoading, isFetching, isStale, dataUpdatedAt]);
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-8">
@@ -107,96 +78,82 @@ const Home = () => {
                     </div>
                 </div>
 
-                {/* User Data Section */}
+                {/* HTTPBin JSON API Section */}
                 <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-200">
                     <div className="flex items-center justify-between mb-4">
-                        <h2 className="text-2xl font-semibold text-gray-800">User Data Query</h2>
-                        <div className="flex items-center space-x-2">
-                            <label className="text-sm font-medium text-gray-700">User ID:</label>
-                            <select
-                                value={userId}
-                                onChange={(e) => setUserId(Number(e.target.value))}
-                                className="px-3 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            >
-                                {[1, 2, 3, 4, 5].map(id => (
-                                    <option key={id} value={id}>User {id}</option>
-                                ))}
-                            </select>
-                            <button
-                                onClick={() => refetchUser()}
-                                className="px-3 py-1 bg-gray-500 text-white rounded-md hover:bg-gray-600 text-sm"
-                            >
-                                Refetch
-                            </button>
-                        </div>
-                    </div>
-                    
-                    {userLoading && (
-                        <div className="flex items-center space-x-3 py-4">
-                            <div className="w-6 h-6 bg-blue-500 rounded-full animate-pulse"></div>
-                            <p className="text-blue-600 font-medium">Loading user data...</p>
-                        </div>
-                    )}
-                    
-                    {userError && (
-                        <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-lg">
-                            Error: {userError.message}
-                        </div>
-                    )}
-                    
-                    {userData && (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                                <p><span className="font-semibold">Name:</span> {userData.name}</p>
-                                <p><span className="font-semibold">Email:</span> {userData.email}</p>
-                                <p><span className="font-semibold">Posts:</span> {userData.posts}</p>
-                            </div>
-                            <div className="space-y-2">
-                                <p><span className="font-semibold">Followers:</span> {userData.followers}</p>
-                                <p><span className="font-semibold">Last Login:</span> {new Date(userData.lastLogin).toLocaleString()}</p>
-                            </div>
-                        </div>
-                    )}
-                </div>
-
-                {/* Posts Section */}
-                <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-200">
-                    <div className="flex items-center justify-between mb-4">
-                        <h2 className="text-2xl font-semibold text-gray-800">Posts Query & Mutation</h2>
+                        <h2 className="text-2xl font-semibold text-gray-800">HTTPBin JSON API Call</h2>
                         <button
-                            onClick={handleCreatePost}
-                            disabled={createPostMutation.isPending}
-                            className="px-4 py-2 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg hover:from-green-600 hover:to-green-700 transition-all duration-200 shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                            onClick={() => refetchExample()}
+                            className="px-3 py-1 bg-orange-500 text-white rounded-md hover:bg-orange-600 text-sm"
                         >
-                            {createPostMutation.isPending ? 'Creating...' : 'Create Post'}
+                            Refetch
                         </button>
                     </div>
                     
-                    {postsLoading && (
+                    {exampleLoading && (
                         <div className="flex items-center space-x-3 py-4">
-                            <div className="w-6 h-6 bg-blue-500 rounded-full animate-pulse"></div>
-                            <p className="text-blue-600 font-medium">Loading posts...</p>
+                            <div className="w-6 h-6 bg-orange-500 rounded-full animate-pulse"></div>
+                            <p className="text-orange-600 font-medium">Loading HTTPBin data...</p>
                         </div>
                     )}
                     
-                    {postsError && (
+                    {exampleError && (
                         <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-lg">
-                            Error: {postsError.message}
+                            <p className="font-semibold">Error fetching HTTPBin data:</p>
+                            <p>{exampleError.message}</p>
                         </div>
                     )}
                     
-                    {postsData && (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                            {postsData.map(post => (
-                                <div key={post.id} className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                                    <h3 className="font-semibold text-gray-800 mb-2">{post.title}</h3>
-                                    <p className="text-gray-600 text-sm mb-3">{post.content}</p>
-                                    <div className="flex items-center justify-between text-xs text-gray-500">
-                                        <span>❤️ {post.likes} likes</span>
-                                        <span>{new Date(post.timestamp).toLocaleDateString()}</span>
+                    {exampleData && (
+                        <div className="space-y-4">
+                            {/* Cache Status Info */}
+                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                                <h4 className="font-semibold text-blue-800 mb-2">📊 Cache Status</h4>
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+                                    <div>
+                                        <span className="font-medium">Is Stale:</span> 
+                                        <span className={`ml-1 ${isStale ? 'text-orange-600' : 'text-green-600'}`}>
+                                            {isStale ? 'Yes' : 'No'}
+                                        </span>
+                                    </div>
+                                    <div>
+                                        <span className="font-medium">Is Fetching:</span> 
+                                        <span className={`ml-1 ${isFetching ? 'text-orange-600' : 'text-green-600'}`}>
+                                            {isFetching ? 'Yes' : 'No'}
+                                        </span>
+                                    </div>
+                                    <div>
+                                        <span className="font-medium">Last Updated:</span> 
+                                        <span className="ml-1 text-gray-600">
+                                            {dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleTimeString() : 'Never'}
+                                        </span>
+                                    </div>
+                                    <div>
+                                        <span className="font-medium">Cache Age:</span> 
+                                        <span className="ml-1 text-gray-600">
+                                            {dataUpdatedAt ? `${Math.round((Date.now() - dataUpdatedAt) / 1000)}s` : 'N/A'}
+                                        </span>
                                     </div>
                                 </div>
-                            ))}
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <p><span className="font-semibold">Status:</span> <span className="text-green-600">{exampleData.status}</span></p>
+                                    <p><span className="font-semibold">Status Text:</span> {exampleData.statusText}</p>
+                                    <p><span className="font-semibold">URL:</span> {exampleData.url}</p>
+                                </div>
+                                <div className="space-y-2">
+                                    <p><span className="font-semibold">Content Type:</span> {exampleData.headers['content-type'] || 'application/json'}</p>
+                                    <p><span className="font-semibold">Fetched At:</span> {new Date(exampleData.timestamp).toLocaleString()}</p>
+                                </div>
+                            </div>
+                            <div className="mt-4">
+                                <h3 className="font-semibold mb-2">JSON Response Data:</h3>
+                                <pre className="bg-gray-800 text-green-400 p-3 rounded-lg text-xs overflow-x-auto">
+                                    {JSON.stringify(exampleData.data, null, 2)}
+                                </pre>
+                            </div>
                         </div>
                     )}
                 </div>
@@ -212,8 +169,8 @@ const Home = () => {
                         </ul>
                         <ul className="space-y-2 text-purple-700">
                             <li>✅ <strong>Error Handling:</strong> Graceful error boundaries</li>
-                            <li>✅ <strong>Mutations:</strong> Optimistic updates & invalidation</li>
-                            <li>✅ <strong>Query Keys:</strong> Smart caching with dependencies</li>
+                            <li>✅ <strong>CORS-friendly APIs:</strong> Using HTTPBin for demo</li>
+                            <li>✅ <strong>Query Keys:</strong> Smart caching with unique identifiers</li>
                         </ul>
                     </div>
                 </div>
